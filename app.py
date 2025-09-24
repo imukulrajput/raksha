@@ -2,6 +2,7 @@ from flask import Flask, Response
 from flask import request
 import struct
 import json
+import logging
 from pbparser.history_parser import ProceedHistoryData
 from pbparser.oldman_parser import ProceedOldMan
 from pbparser.alarm_parser import ProceedAlarmV2
@@ -10,71 +11,112 @@ from iutils.datetime_utils import get_previous_day
 from calculation.sleep_preprocessor import PrepareSleepData
 from calculation.ecg_preprocessor import PrepareEcgData
 from calculation.af_preprocessor import PrepareRriData
-
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = Flask(__name__)
  
-@app.route("/pb/upload",methods=['POST']) 
-def handle_pb_upload():
-    # --- ADD THESE LINES ---
-    print("==============================================")
-    print("✅ PB/UPLOAD ENDPOINT WAS HIT! DATA RECEIVED.")
-    print(f"Data length: {len(request.data)} bytes")
-    print("==============================================")
-    # -----------------------
+# @app.route("/pb/upload",methods=['POST']) 
+# def uploadPBData():
+#     payload = b''
+#     if request.content_type == 'application/x-www-form-urlencoded':
+#         payload = request.get_data()
+#     else:
+#         payload = request.data
+#     print(payload.hex())
+#     if len(payload) < 23:
+#         print('data length below 23')
+#         return Response(response=bytes([0x02]), status=200, mimetype="text/plain")
+#     device_bytes = bytearray(15)
+#     prefix_bytes = bytearray(2)
+#     len_bytes = bytearray(2)
+#     crc_bytes = bytearray(2)
+#     opt_bytes = bytearray(2)
+#     device_bytes[:15] = payload[:15]
+#     deviceid = device_bytes.decode()
+#     print('device: {0}'.format(deviceid))
+#     start_pos = 15
+#     while True:
+#         if len(payload)<start_pos+8:
+#             print('data length below {0}'.format(start_pos+8))
+#             return Response(response=bytes([0x02]), status=200, mimetype="text/plain")
+#         prefix_bytes[:2] = payload[start_pos:start_pos+2]
+#         if prefix_bytes[0] != 0x44 or prefix_bytes[1] != 0x54:
+#             print('invalid data header at {0}'.format(start_pos))
+#             return Response(response=bytes([0x03]), status=200, mimetype="text/plain")
+#         len_bytes[:2] = payload[start_pos+2:start_pos+4]
+#         length = int(len_bytes[1])*0x100 + int(len_bytes[0])
+#         crc_bytes[:2] = payload[start_pos+4:start_pos+6]
+#         opt_bytes[:2] = payload[start_pos+6:start_pos+8]
+#         if len(payload) < start_pos+8+length:
+#             print('data length below {0}'.format(start_pos+8+length))
+#             return Response(response=bytes([0x02]), status=200, mimetype="text/plain")
+#         pbPayload = payload[start_pos+8 : start_pos+8+length]
+#         opt = struct.unpack('<H', opt_bytes)[0]
+#         if opt == 0x0A:
+#             ProceedOldMan(pbPayload)
+#         elif opt == 0x80:
+#             ProceedHistoryData(pbPayload)
+#             PrepareSleepData(pbPayload)
+#             PrepareEcgData(pbPayload)
+#             PrepareRriData(pbPayload)
+#         start_pos += 8 + length
+#         if len(payload) == start_pos:
+#             #just read to the end and no extra byte leave
+#             break
+#     return Response(response=bytes([0x00]), status=200, mimetype="text/plain")
 
-    # The rest of your function that processes the data...
-    # process_data(request.data)
-
-    # Make sure it returns the correct success code
-    return b'\x00'
+@app.route("/pb/upload",methods=['POST'])
 def uploadPBData():
-    payload = b''
-    if request.content_type == 'application/x-www-form-urlencoded':
-        payload = request.get_data()
-    else:
-        payload = request.data
-    print(payload.hex())
+    payload = request.data
+    logging.info(f"Received payload of {len(payload)} bytes.")
+
     if len(payload) < 23:
-        print('data length below 23')
+        logging.warning('Payload length is less than 23 bytes.')
         return Response(response=bytes([0x02]), status=200, mimetype="text/plain")
-    device_bytes = bytearray(15)
-    prefix_bytes = bytearray(2)
-    len_bytes = bytearray(2)
-    crc_bytes = bytearray(2)
-    opt_bytes = bytearray(2)
-    device_bytes[:15] = payload[:15]
-    deviceid = device_bytes.decode()
-    print('device: {0}'.format(deviceid))
+
+    deviceid = payload[:15].decode()
+    logging.info(f"Data from Device ID: {deviceid}")
+
     start_pos = 15
-    while True:
-        if len(payload)<start_pos+8:
-            print('data length below {0}'.format(start_pos+8))
-            return Response(response=bytes([0x02]), status=200, mimetype="text/plain")
-        prefix_bytes[:2] = payload[start_pos:start_pos+2]
-        if prefix_bytes[0] != 0x44 or prefix_bytes[1] != 0x54:
-            print('invalid data header at {0}'.format(start_pos))
-            return Response(response=bytes([0x03]), status=200, mimetype="text/plain")
-        len_bytes[:2] = payload[start_pos+2:start_pos+4]
-        length = int(len_bytes[1])*0x100 + int(len_bytes[0])
-        crc_bytes[:2] = payload[start_pos+4:start_pos+6]
-        opt_bytes[:2] = payload[start_pos+6:start_pos+8]
-        if len(payload) < start_pos+8+length:
-            print('data length below {0}'.format(start_pos+8+length))
-            return Response(response=bytes([0x02]), status=200, mimetype="text/plain")
-        pbPayload = payload[start_pos+8 : start_pos+8+length]
-        opt = struct.unpack('<H', opt_bytes)[0]
-        if opt == 0x0A:
-            ProceedOldMan(pbPayload)
-        elif opt == 0x80:
-            ProceedHistoryData(pbPayload)
-            PrepareSleepData(pbPayload)
-            PrepareEcgData(pbPayload)
-            PrepareRriData(pbPayload)
-        start_pos += 8 + length
-        if len(payload) == start_pos:
-            #just read to the end and no extra byte leave
+    while start_pos < len(payload):
+        if len(payload) < start_pos + 8:
+            logging.error(f'Malformed packet: not enough data for header at position {start_pos}.')
             break
+
+        header = payload[start_pos:start_pos + 8]
+        prefix = header[0:2]
+        
+        if prefix != b'\x44\x54': 
+            logging.error(f'Invalid data header {prefix.hex()} at position {start_pos}.')
+            return Response(response=bytes([0x03]), status=200, mimetype="text/plain")
+
+        length = struct.unpack('<H', header[2:4])[0]
+        opt = struct.unpack('<H', header[6:8])[0]
+
+        if len(payload) < start_pos + 8 + length:
+            logging.error(f'Malformed packet: data length {len(payload)} is less than expected {start_pos + 8 + length}.')
+            break
+
+        pbPayload = payload[start_pos + 8 : start_pos + 8 + length]
+
+        logging.info(f"--- Parsing packet with Opt: {hex(opt)}, Length: {length} ---")
+
+        # Capture and log the parsed data
+        if opt == 0x0A: # GNSS and basic health data
+            parsed_data = ProceedOldMan(pbPayload)
+            logging.info(f"Parsed OldMan/GNSS Data: {json.dumps(parsed_data, indent=2)}")
+        elif opt == 0x80: # All health history data
+            parsed_data = ProceedHistoryData(pbPayload)
+            logging.info(f"Parsed History Data: {json.dumps(parsed_data, indent=2)}")
+            # You can also process sleep/ECG data here if needed
+            # PrepareSleepData(pbPayload)
+            # PrepareEcgData(pbPayload)
+            # PrepareRriData(pbPayload)
+        
+        start_pos += 8 + length
+
     return Response(response=bytes([0x00]), status=200, mimetype="text/plain")
+
+
     
 @app.route("/alarm/upload",methods=['POST'])
 def uploadAlarmData():
@@ -187,6 +229,9 @@ def getSleepResult():
     resp = {}     
     deviceid = request.args['deviceid']
     sleep_date = request.args['sleep_date']
+
+    logging.info(f"Received /health/sleep request for Device ID: {deviceid} on Date: {sleep_date}") 
+
     if not deviceid or not is_valid_date(sleep_date):
         resp["ReturnCode"] = 10002
         return json.dumps(resp,ensure_ascii=False)
