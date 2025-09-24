@@ -14,6 +14,19 @@ from calculation.af_preprocessor import PrepareRriData
 app = Flask(__name__)
  
 @app.route("/pb/upload",methods=['POST']) 
+def handle_pb_upload():
+    # --- ADD THESE LINES ---
+    print("==============================================")
+    print("✅ PB/UPLOAD ENDPOINT WAS HIT! DATA RECEIVED.")
+    print(f"Data length: {len(request.data)} bytes")
+    print("==============================================")
+    # -----------------------
+
+    # The rest of your function that processes the data...
+    # process_data(request.data)
+
+    # Make sure it returns the correct success code
+    return b'\x00'
 def uploadPBData():
     payload = b''
     if request.content_type == 'application/x-www-form-urlencoded':
