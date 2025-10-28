@@ -63,7 +63,8 @@ def uploadPBData():
             today_str = datetime.utcnow().strftime('%Y%m%d')
             filename = os.path.join(data_dir, f"{deviceid}_{today_str}_0x80.bin")
             with open(filename, "ab") as f:
-                f.write(pbPayload)
+                full_packet_data = payload[start_pos : start_pos+8+length]
+                f.write(full_packet_data)
 
             ProceedHistoryData(pbPayload)
             PrepareSleepData(pbPayload)
@@ -214,7 +215,7 @@ def read_and_process_raw_file(file_path):
 
         pbPayload = payload[start_pos+8 : start_pos+8+length]
 
-        if opt == 0x80:
+        if opt == 0x80:     
             try:
                 sleep_dict = PrepareSleepData(pbPayload) 
                 rri_list = PrepareRriData(pbPayload)
@@ -233,7 +234,7 @@ def read_and_process_raw_file(file_path):
         if len(payload) == start_pos:       
             break 
 
-        return sleep_data_list, rri_data_list
+    return sleep_data_list, rri_data_list
 
 @app.route("/health/sleep", methods=['GET'])
 def getSleepResult():     
