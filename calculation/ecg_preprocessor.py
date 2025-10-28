@@ -28,4 +28,5 @@ def PrepareEcgData(pbPayload: bytes):
             date_str = parse_pb_datetime(int(unix_timestamp))
             raw_data_list = his_ecg.raw_data
             count = len(raw_data_list)
-            print(f"{date_str} {seq} {count}")
+            print(f"{date_str} {seq} {count}") 
+            

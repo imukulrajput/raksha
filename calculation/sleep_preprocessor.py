@@ -94,6 +94,7 @@ def PrepareSleepData(pbPayload: bytes):
             # Save sleep_str with date_str/seq, later to do sleep calculation,
             # need to combine all day's sleep_str
             print(f"{date_str} {seq} {sleep_str}")
+            return sleep_dict
 
 
 #Combine all day's sleep_str to one single string, in format json array.

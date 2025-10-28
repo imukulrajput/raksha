@@ -1,3 +1,5 @@
+import os
+from datetime import datetime 
 from flask import Flask, Response
 from flask import request
 import struct
@@ -15,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 app = Flask(__name__)
  
 @app.route("/pb/upload",methods=['POST']) 
-def uploadPBData():
+def uploadPBData(): 
     payload = b''
     if request.content_type == 'application/x-www-form-urlencoded':
         payload = request.get_data()
@@ -52,8 +54,18 @@ def uploadPBData():
         pbPayload = payload[start_pos+8 : start_pos+8+length]
         opt = struct.unpack('<H', opt_bytes)[0]
         if opt == 0x0A:
-            ProceedOldMan(pbPayload)
+            ProceedOldMan(pbPayload) 
         elif opt == 0x80:
+            
+            data_dir = os.path.join(os.getcwd(), "raw_data")
+            os.makedirs(data_dir, exist_ok=True)
+
+            today_str = datetime.utcnow().strftime('%Y%m%d')
+            filename = os.path.join(data_dir, f"{deviceid}_{today_str}_0x80.bin")
+
+            with open(filename, "ab") as f:
+                f.write(pbPayload) 
+
             ProceedHistoryData(pbPayload)
             PrepareSleepData(pbPayload)
             PrepareEcgData(pbPayload)
@@ -66,7 +78,6 @@ def uploadPBData():
 
 
 
-    
 @app.route("/alarm/upload",methods=['POST'])
 def uploadAlarmData():
     payload = b''
@@ -82,7 +93,7 @@ def uploadAlarmData():
     prefix_bytes = bytearray(2)
     len_bytes = bytearray(2)
     crc_bytes = bytearray(2)
-    opt_bytes = bytearray(2)
+    opt_bytes = bytearray(2)     
     device_bytes[:15] = payload[:15]
     deviceid = device_bytes.decode()
     print('device: {0}'.format(deviceid))
@@ -213,3 +224,4 @@ def getSleepResult():
 
 if __name__ == '__main__':
     app.run(port=8098)    
+  

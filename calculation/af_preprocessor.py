@@ -34,3 +34,4 @@ def PrepareRriData(pbPayload: bytes):
                 rri_list.append(int(s_value if s_value < 0x8000 else s_value - 0x10000))
             count = len(rri_list)
             print(f"{date_str} {seq} {count}")
+            return rri_list
