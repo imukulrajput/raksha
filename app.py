@@ -277,7 +277,7 @@ def getSleepResult():
         }
 
         api_url = "https://iwap1.iwown.com/algoservice/calculation/sleep"
-        api_response = requests.post(api_url, json=algo_payload, timeout=20)
+        api_response = requests.post(api_url, json=algo_payload, timeout=90)
         api_response.raise_for_status()  
 
         logging.info("Successfully received real sleep data from Algorithm API") 
