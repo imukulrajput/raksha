@@ -13,7 +13,7 @@ def ProceedHistoryData(pbPayload):
         return
     data_field = hisNotify.WhichOneof('data')
     if data_field == 'index_table':
-        his_type = hisNotify.type
+        his_type = hisNotify.type   
         #data type 18 : TCM, needed when proceed TCM data
         if his_type == theproto.his_data_pb2.HisDataType.YYLPFE_DATA:
             index_table = hisNotify.index_table
@@ -53,7 +53,7 @@ def ProceedHistoryData(pbPayload):
                 # our watch integrates other 3rd party devices, the data
                 # of those devices will be uploaded as 3rd party data
                 parse_third_party_data(his_third_party)
-        elif his_type == theproto.his_data_pb2.HisDataType.PPG_DATA:
+        elif his_type == theproto.his_data_pb2.HisDataType.PPG_DATA:     
             his_ppg = his_data.ppg
             if his_ppg is not None:
                 # ppg data
@@ -78,7 +78,7 @@ def parse_health_data(health_data):
     # Step data
     if health_data.HasField("pedo_data"):
         pedo_data = health_data.pedo_data
-        step = pedo_data.step
+        step = pedo_data.step                      
         distance = float(pedo_data.distance) * 0.1
         calorie = float(pedo_data.calorie) * 0.1
         print('----{0} step:{1},distance:{2},calorie:{3}'.format(time_str,
@@ -113,9 +113,10 @@ def parse_health_data(health_data):
     if health_data.HasField("hrv_data"):
         hrv_data = health_data.hrv_data
         fatigue = int(hrv_data.fatigue)
-        if fatigue <= 0:
-            fatigue = int(math.log(float(hrv_data.RMSSD)) * 20)
-        print('----{0} fatigue:{1}'.format(time_str, fatigue))
+        if fatigue <= 0 and hrv_data.RMSSD > 0:
+            if float(hrv_data.RMSSD) > 0:
+                fatigue = int(math.log(float(hrv_data.RMSSD)) * 20)
+        print('----{0} fatigue:{1}'.format(time_str, fatigue))    
         
     # Temperature
     if health_data.HasField("temperature_data"):
@@ -139,7 +140,7 @@ def parse_health_data(health_data):
         shutdown = sleep_data.shut_down
         print('----{0} charge:{1},shutdown:{2},count:{3}'.format(time_str, charge,
 			shutdown, len(sleep_data_list)))
-        
+                           
     if health_data.HasField("bp_bpm_data"):
         bpBpmData = health_data.bp_bpm_data
         bpm = bpBpmData.bpm
