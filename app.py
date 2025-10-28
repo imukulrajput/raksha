@@ -1,5 +1,6 @@
 import os
-from datetime import datetime 
+import requests
+from datetime import datetime
 from flask import Flask, Response
 from flask import request
 import struct
@@ -17,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 app = Flask(__name__)
  
 @app.route("/pb/upload",methods=['POST']) 
-def uploadPBData(): 
+def uploadPBData():
     payload = b''
     if request.content_type == 'application/x-www-form-urlencoded':
         payload = request.get_data()
@@ -54,17 +55,15 @@ def uploadPBData():
         pbPayload = payload[start_pos+8 : start_pos+8+length]
         opt = struct.unpack('<H', opt_bytes)[0]
         if opt == 0x0A:
-            ProceedOldMan(pbPayload) 
+            ProceedOldMan(pbPayload)
         elif opt == 0x80:
-            
+
             data_dir = os.path.join(os.getcwd(), "raw_data")
             os.makedirs(data_dir, exist_ok=True)
-
             today_str = datetime.utcnow().strftime('%Y%m%d')
             filename = os.path.join(data_dir, f"{deviceid}_{today_str}_0x80.bin")
-
             with open(filename, "ab") as f:
-                f.write(pbPayload) 
+                f.write(pbPayload)
 
             ProceedHistoryData(pbPayload)
             PrepareSleepData(pbPayload)
@@ -184,6 +183,58 @@ def deviceStatusChange():
 def hello_world():
     return "hello world"
 
+
+def read_and_process_raw_file(file_path):
+    sleep_data_list = []
+    rri_data_list = []
+
+    if not os.path.exists(file_path):
+        return sleep_data_list, rri_data_list
+    
+    with open(file_path, "rb") as f:
+        payload = f.read()
+
+    start_pos = 0
+    while True:
+        if len(payload) < start_pos + 8:
+            break
+
+        prefix_bytes = payload[start_pos:start_pos+2]
+        if prefix_bytes != b'\x44\x54':
+            logging.warning(f"Invalid packet header in file {file_path}")
+            break
+
+        len_bytes = payload[start_pos+2:start_pos+4]
+        length = int(len_bytes[1])*0x100 + int(len_bytes[0])
+        opt_bytes = payload[start_pos+6:start_pos+8]
+        opt = struct.unpack('<H', opt_bytes)[0]
+
+        if len(payload) < start_pos + 8 + length:
+            break
+
+        pbPayload = payload[start_pos+8 : start_pos+8+length]
+
+        if opt == 0x80:
+            try:
+                sleep_dict = PrepareSleepData(pbPayload) 
+                rri_list = PrepareRriData(pbPayload)
+
+                if sleep_dict:
+                    sleep_data_list.append(sleep_dict)
+
+                if rri_list: 
+                    rri_data_list.extend(rri_list)
+
+            except Exception as e:
+                logging.error(f"Error processing packet in raw file: {e}")
+
+
+        start_pos += 8 + length 
+        if len(payload) == start_pos:       
+            break 
+
+        return sleep_data_list, rri_data_list
+
 @app.route("/health/sleep", methods=['GET'])
 def getSleepResult():     
     resp = {}     
@@ -192,35 +243,54 @@ def getSleepResult():
 
     logging.info(f"Received /health/sleep request for Device ID: {deviceid} on Date: {sleep_date}") 
 
-    if not deviceid or not is_valid_date(sleep_date):
+    if not deviceid or not sleep_date or not is_valid_date(sleep_date):
         resp["ReturnCode"] = 10002
         return json.dumps(resp,ensure_ascii=False)
     print(f"getSleepResult {deviceid} {sleep_date}")
-    #check whether there is sleep data available with specified deviceid/sleepdata
-    data_exist = True
-    if data_exist:
-        prev_day = get_previous_day(sleep_date)
-        #the sleep data here is get by invoke algorithm api to calculate sleep result
-        #see doc here : https://api8.iwown.com/iot_platform/calculation.html#id4
-        sleep = {
-            "deviceid": deviceid,
-            "sleep_date": sleep_date,
-            "start_time": f"{prev_day} 23:15:00",
-            "end_time": f"{sleep_date} 07:00:00",
-            "deep_sleep": 85,
-            "light_sleep": 300,
-            "weak_sleep": 30,
-            "eyemove_sleep": 50,
-            "score": 80,
-            "osahs_risk": 0,
-            "spo2_score": 0,
-            "sleep_hr": 60
+    
+
+    try:
+        prev_day_str = get_previous_day(sleep_date).replace("-", "")
+        prev_day_file = os.path.join(os.getcwd(), "raw_data", f"{deviceid}_{prev_day_str}_0x80.bin")
+        prevDay_list, prevDayRri_list = read_and_process_raw_file(prev_day_file)
+
+        current_day_str = sleep_date.replace("-", "")
+        current_day_file = os.path.join(os.getcwd(), "raw_data", f"{deviceid}_{current_day_str}_0x80.bin")
+        nextDay_list, nextDayRri_list = read_and_process_raw_file(current_day_file)
+
+        if not prevDay_list and not nextDay_list:
+            logging.warning(f"No raw data found for {deviceid} on {sleep_date}")
+            resp["ReturnCode"] = 10404  
+            return json.dumps(resp, ensure_ascii=False)
+        
+
+        algo_payload = {
+            "prevDay": json.dumps(prevDay_list),
+            "nextDay": json.dumps(nextDay_list),
+            "prevDayRri": prevDayRri_list,
+            "nextDayRri": nextDayRri_list,
+            "recordDate": int(current_day_str),
+            "device_id": deviceid,
+            "account": "iwown",
+            "password": "iwown2013"
         }
-        resp["Data"] = sleep
-        resp["ReturnCode"] = 0
-    else:
-        resp["ReturnCode"] = 10404
-    return json.dumps(resp,ensure_ascii=False)
+
+        api_url = "https://iwap1.iwown.com/algoservice/calculation/sleep"
+        api_response = requests.post(api_url, json=algo_payload, timeout=20)
+        api_response.raise_for_status()  
+
+        logging.info("Successfully received real sleep data from Algorithm API") 
+
+        return api_response.json()
+    
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Algorithm API call failed: {e}")
+        resp["ReturnCode"] = 10505 
+        return json.dumps(resp, ensure_ascii=False)  
+    except Exception as e:
+        logging.error(f"An error occurred during sleep calculation: {e}", exc_info=True)
+        resp["ReturnCode"] = 10001
+        return json.dumps(resp, ensure_ascii=False)
 
 if __name__ == '__main__':
     app.run(port=8098)    
